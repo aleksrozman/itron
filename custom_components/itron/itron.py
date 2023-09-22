@@ -305,9 +305,8 @@ class Itron:
                                     ]
                                 ),
                             ),
-                            timestamp=bundle["DailyData"]["RecentRegisterRead"][
-                                "ReadingTime"
-                            ],
+                            timestamp=self.convert_date(
+                                bundle["DailyData"]["RecentRegisterRead"]["ReadingTime"]),
                             statistics=ItronStatistics(
                                 lowest_usage=self.convert_statistics(
                                     raw_value=bundle["DailyData"]["Statistics"]["LowestUsage"]

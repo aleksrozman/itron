@@ -30,7 +30,6 @@ class ItronEntityDescriptionMixin:
     """Mixin values for required keys."""
 
     value_fn: Callable[[ItronServicePoint], str | float]
-    time_fn: Callable[[ItronServicePoint], str | datetime]
 
 
 @dataclass
@@ -55,7 +54,6 @@ WATER_SENSORS: tuple[ItronEntityDescription, ...] = (
         state_class=SensorStateClass.TOTAL_INCREASING,
         suggested_display_precision=2,
         value_fn=lambda data: data.meter.reading,
-        time_fn=lambda data: data.meter.timestamp,
     ),
     ItronEntityDescription(
         key="average_usage_weekday",
@@ -66,7 +64,6 @@ WATER_SENSORS: tuple[ItronEntityDescription, ...] = (
         state_class=SensorStateClass.TOTAL,
         suggested_display_precision=2,
         value_fn=lambda data: data.meter.statistics.average_usage.weekday.value,
-        time_fn=lambda data: data.meter.statistics.average_usage.weekday.timestamp,
     ),
     ItronEntityDescription(
         key="average_usage_weekend",
@@ -77,7 +74,6 @@ WATER_SENSORS: tuple[ItronEntityDescription, ...] = (
         state_class=SensorStateClass.TOTAL,
         suggested_display_precision=2,
         value_fn=lambda data: data.meter.statistics.average_usage.weekend.value,
-        time_fn=lambda data: data.meter.statistics.average_usage.weekend.timestamp,
     ),
     ItronEntityDescription(
         key="average_usage_all",
@@ -88,7 +84,6 @@ WATER_SENSORS: tuple[ItronEntityDescription, ...] = (
         state_class=SensorStateClass.TOTAL,
         suggested_display_precision=2,
         value_fn=lambda data: data.meter.statistics.average_usage.allday.value,
-        time_fn=lambda data: data.meter.statistics.average_usage.allday.timestamp,
     ),
     ItronEntityDescription(
         key="highest_usage_all",
@@ -99,7 +94,6 @@ WATER_SENSORS: tuple[ItronEntityDescription, ...] = (
         state_class=SensorStateClass.TOTAL,
         suggested_display_precision=2,
         value_fn=lambda data: data.meter.statistics.highest_usage.allday.value,
-        time_fn=lambda data: data.meter.statistics.highest_usage.allday.timestamp,
     ),
     ItronEntityDescription(
         key="highest_usage_all_time",
@@ -109,7 +103,6 @@ WATER_SENSORS: tuple[ItronEntityDescription, ...] = (
         value_fn=lambda data: data.meter.statistics.highest_usage.allday.timestamp.astimezone(
             pytz.utc
         ).date(),
-        time_fn=lambda data: data.meter.statistics.highest_usage.allday.timestamp,
     ),
 )
 
@@ -184,15 +177,6 @@ class ItronSensor(CoordinatorEntity[ItronCoordinator], SensorEntity):
         self._attr_unique_id = f"{device_id}_{description.key}"
         self._attr_device_info = device
         self.municipality_account_id = municipality_account_id
-
-    @property
-    def last_reset(self) -> datetime:
-        """Return the last time it was updated."""
-        if self.coordinator.data is not None:
-            return self.entity_description.time_fn(
-                self.coordinator.data[self.municipality_account_id]
-            )
-        return None
 
     @property
     def native_value(self) -> StateType:
