@@ -1,0 +1,14 @@
+{
+  "domain": "itron",
+  "name": "Itron",
+  "codeowners": ["@aleksrozman"],
+  "config_flow": true,
+  "dependencies": [],
+  "documentation": "https://github.com/aleksrozman/itron",
+  "homekit": {},
+  "iot_class": "cloud_polling",
+  "requirements": [],
+  "ssdp": [],
+  "version": "0.0.1",
+  "zeroconf": []
+}

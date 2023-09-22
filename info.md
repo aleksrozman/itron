@@ -1,8 +1,3 @@
-[![GitHub Release][releases-shield]][releases]
-[![GitHub Activity][commits-shield]][commits]
-[![License][license-shield]](LICENSE)
-[![hacs][hacsbadge]][hacs]
-
 ![Project Maintenance][maintenance-shield]
 [![BuyMeCoffee][buymecoffeebadge]][buymecoffee]
 
@@ -16,27 +11,6 @@ Supported municipalities:
 Supported meters:
 
 - Water
-
-# Installation
-
-## HACS
-
-1. [Add](http://homeassistant.local:8123/hacs/integrations) custom integrations repository: https://github.com/aleksrozman/itron
-2. Select "Itron" in the Integration tab and click download
-3. Restart Home Assistant
-4. Enable the integration
-
-## Manual
-
-1. Copy directory `custom_components/itron` to your `<config dir>/custom_components` directory
-2. Restart Home-Assistant
-3. Enable the integration
-
-## Enable the integration
-
-1. Go to [Settings / Devices & Services / Integrations](http://homeassistant.local:8123/config/integrations). Click **+ ADD INTEGRATION**
-2. Search for "Itron" and click on it
-3. Restart Home Assistant
 
 [itron]: https://github.com/aleksrozman/itron
 [commits-shield]: https://img.shields.io/github/commit-activity/y/aleksrozman/itron.svg?style=for-the-badge
