@@ -2,6 +2,8 @@
   "config": {
     "step": {
       "user": {
+        "title": "Itron Municipality Meters",
+        "description": "Integrate municipalities that use Itron Hosting into Home Assistant",
         "data": {
           "municipality": "Municipality",
           "username": "[%key:common::config_flow::data::username%]",
@@ -16,6 +18,15 @@
     },
     "abort": {
       "already_configured": "[%key:common::config_flow::abort::already_configured_device%]"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Itron Configuration Options",
+        "data": { "water_cost": "Water Cost" },
+        "data_description": { "water_cost": "Cost per 1000 gallons" }
+      }
     }
   }
 }

@@ -2,8 +2,6 @@
 
 import logging
 from datetime import datetime, timedelta
-from types import MappingProxyType
-from typing import Any, cast
 
 from homeassistant.components.recorder import get_instance
 from homeassistant.components.recorder.models import StatisticData, StatisticMetaData
@@ -12,13 +10,14 @@ from homeassistant.components.recorder.statistics import (
     get_last_statistics,
     statistics_during_period,
 )
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME, UnitOfEnergy, UnitOfVolume
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers import aiohttp_client
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
-from .const import CONF_MUNICIPALITY, DOMAIN
+from .const import CONF_MUNICIPALITY, DOMAIN, CONF_COST_OPTION
 from .exceptions import InvalidAuth
 from .itron import Itron, ItronServicePoint, ItronUsageDetail, UnitOfMeasure
 
@@ -28,10 +27,13 @@ _LOGGER = logging.getLogger(__name__)
 class ItronCoordinator(DataUpdateCoordinator[dict[str, ItronServicePoint]]):
     """Handle fetching itron data, updating sensors and inserting statistics."""
 
+    cost: float
+
     def __init__(
         self,
         hass: HomeAssistant,
-        entry_data: MappingProxyType[str, Any],
+        *,
+        entry: ConfigEntry,
     ) -> None:
         """Initialize the data handler."""
         super().__init__(
@@ -42,17 +44,24 @@ class ItronCoordinator(DataUpdateCoordinator[dict[str, ItronServicePoint]]):
             # Refresh every 12h to be at most 12h behind.
             update_interval=timedelta(hours=12),
         )
+
+        self.cost = entry.options.get(CONF_COST_OPTION, 1.0) / 1000  # per gallons
+
         self.api = Itron(
             aiohttp_client.async_get_clientsession(hass),
-            entry_data[CONF_MUNICIPALITY],
-            entry_data[CONF_USERNAME],
-            entry_data[CONF_PASSWORD],
+            entry.data[CONF_MUNICIPALITY],
+            entry.data[CONF_USERNAME],
+            entry.data[CONF_PASSWORD],
         )
 
     async def _async_update_data(
         self,
     ) -> dict[str, ItronServicePoint]:
         """Fetch data from API endpoint."""
+
+        # pylint: disable=too-many-locals
+        # There are multiple statistics connected to each other
+
         try:
             # Login expires after a few minutes.
             # Given the infrequent updating (every 12h)
@@ -70,6 +79,7 @@ class ItronCoordinator(DataUpdateCoordinator[dict[str, ItronServicePoint]]):
                 )
             )
             meter_statistic_id = f"{DOMAIN}:{id_prefix.lower()}_hourly_usage"
+            cost_statistic_id = f"{DOMAIN}:{id_prefix.lower()}_hourly_cost"
             _LOGGER.debug(
                 "Updating Statistics for %s",
                 meter_statistic_id,
@@ -80,56 +90,71 @@ class ItronCoordinator(DataUpdateCoordinator[dict[str, ItronServicePoint]]):
             )
             consumption = 0
             consumption_statistics = []
+            cost_statistics = []
             details: list[ItronUsageDetail] = []
+            existing_stats = []
 
             if not last_stat:
                 _LOGGER.debug("Updating statistic for the first time")
                 details = await self.api.async_get_usage_since(servicepoint.id_, None)
 
-                for detail in sorted(details, key=lambda d: d.timestamp):
-                    consumption += detail.usage or 0
-                    consumption_statistics.append(
-                        StatisticData(
-                            start=detail.timestamp.replace(
-                                minute=0, second=0, microsecond=0),  # to be sure
-                            state=detail.usage, sum=consumption
-                        )
-                    )
             else:
-                _LOGGER.debug("Calculating consumption")
+                _LOGGER.debug("Calculating new consumption")
                 # Data is provided sometimes a day ahead but empty, so going back
-                # 2 days and grab some extra since we can backfill easily
+                # 2 days and grab some extra and we will backfill from 3 days prior
                 last_stat_timestamp = self.api.adjust_timezone(
-                    datetime.fromtimestamp(
-                        last_stat[meter_statistic_id][0]["start"])
-                ) - timedelta(2)
+                    datetime.fromtimestamp(last_stat[meter_statistic_id][0]["start"])
+                )
                 details = await self.api.async_get_usage_since(
-                    servicepoint.id_, last_stat_timestamp
+                    servicepoint.id_, last_stat_timestamp - timedelta(2)
                 )
 
-                stats = await get_instance(self.hass).async_add_executor_job(
+                existing_stats = await get_instance(self.hass).async_add_executor_job(
                     statistics_during_period,
                     self.hass,
-                    last_stat_timestamp,
-                    None,
+                    last_stat_timestamp - timedelta(3),
+                    None,  # from last_stat till now
                     {meter_statistic_id},
                     "hour",
                     None,
-                    {"sum", "state"},
+                    {"state", "sum"},
                 )
-                if stats:  # Fresh
-                    consumption = cast(
-                        float, stats[meter_statistic_id][0]["sum"])
-                    for detail in sorted(details, key=lambda d: d.timestamp):
-                        consumption += detail.usage  # count the usage
-                        consumption_statistics.append(
-                            StatisticData(
-                                start=detail.timestamp.replace(
-                                    minute=0, second=0, microsecond=0),
-                                state=detail.usage,
-                                sum=consumption,
-                            )
-                        )
+                if not existing_stats or not existing_stats[meter_statistic_id]:
+                    # This should never happen, we got the timestamp before the stats
+                    _LOGGER.error("No old statistics found but time exists")
+
+            sorted_details = sorted(details, key=lambda d: d.timestamp)
+
+            if existing_stats and existing_stats[meter_statistic_id]:
+                # Time to synchronize to the old consumption sum so
+                # we can take over as they don't always align per hour (upto 12)
+                # since the API will return the whole day
+                for stat in sorted(
+                    existing_stats[meter_statistic_id], key=lambda d: int(d["start"])
+                ):
+                    if int(stat["start"]) < sorted_details[0].timestamp.timestamp():
+                        consumption = float(stat["sum"])
+                    else:
+                        break
+
+                if consumption == 0:
+                    # Also should not happen since we go 1 extra day back
+                    _LOGGER.error("Failed to synchronize consumption statistics")
+
+            for detail in sorted_details:
+                consumption += detail.usage or 0
+                consumption_statistics.append(
+                    StatisticData(
+                        start=detail.timestamp, state=detail.usage, sum=consumption
+                    )
+                )
+                cost_statistics.append(
+                    StatisticData(
+                        start=detail.timestamp,
+                        state=detail.usage * self.cost,
+                        sum=consumption * self.cost,
+                    )
+                )
 
             name_prefix = " ".join(
                 (
@@ -144,17 +169,26 @@ class ItronCoordinator(DataUpdateCoordinator[dict[str, ItronServicePoint]]):
                 consumption_metadata = StatisticMetaData(
                     has_mean=False,
                     has_sum=True,
-                    name=f"{name_prefix.lower()} hourly consumption",
+                    name=f"{name_prefix.lower()} consumption",
                     source=DOMAIN,
                     statistic_id=meter_statistic_id,
                     unit_of_measurement=UnitOfVolume.GALLONS
                     if servicepoint.commodity.unit == UnitOfMeasure.GALLON
                     else UnitOfEnergy.KILO_WATT_HOUR,
                 )
+                cost_metadata = StatisticMetaData(
+                    has_mean=False,
+                    has_sum=True,
+                    name=f"{name_prefix.lower()} cost",
+                    source=DOMAIN,
+                    statistic_id=cost_statistic_id,
+                    unit_of_measurement=None,
+                )
 
-            async_add_external_statistics(
-                self.hass, consumption_metadata, consumption_statistics
-            )
+                async_add_external_statistics(
+                    self.hass, consumption_metadata, consumption_statistics
+                )
+                async_add_external_statistics(self.hass, cost_metadata, cost_statistics)
 
         return {
             servicepoint.id_: servicepoint for servicepoint in self.api.servicepoints

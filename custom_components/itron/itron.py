@@ -2,16 +2,16 @@
 
 # While this integration is present for water, it is inspired by opower and the
 # likelihood that gas would be eventually supported and maybe even electricity
-# in some municipalties
+# in some municipalities
 
 
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import Enum
+from zoneinfo import ZoneInfo
 
 import aiohttp
-import pytz
 from aiohttp.client_exceptions import ClientResponseError
 
 from .exceptions import CannotConnect, InvalidAuth
@@ -53,6 +53,7 @@ class UnitOfMeasure(Enum):
 @dataclass
 class ItronCustomer:
     """An itron customer, rarely used."""
+
     first_name: str
     last_name: str
 
@@ -60,6 +61,7 @@ class ItronCustomer:
 @dataclass
 class ItronCommodity:
     """The commodity to track, storing the type, unit, and flow."""
+
     type: str
     unit: UnitOfMeasure
     demand: str
@@ -68,6 +70,7 @@ class ItronCommodity:
 @dataclass
 class ItronLocation:
     """Meter location."""
+
     address: str
     city: str
     zip: str
@@ -76,6 +79,7 @@ class ItronLocation:
 @dataclass
 class ItronStatisticsDetailEntry:
     """Raw statistics entry."""
+
     value: float
     timestamp: datetime
 
@@ -83,6 +87,7 @@ class ItronStatisticsDetailEntry:
 @dataclass
 class ItronStatisticsDetail:
     """Aggregate of statistics."""
+
     weekday: ItronStatisticsDetailEntry
     weekend: ItronStatisticsDetailEntry
     allday: ItronStatisticsDetailEntry
@@ -91,6 +96,7 @@ class ItronStatisticsDetail:
 @dataclass
 class ItronStatistics:
     """Types of statistics stored."""
+
     lowest_usage: ItronStatisticsDetail
     highest_usage: ItronStatisticsDetail
     average_usage: ItronStatisticsDetail
@@ -101,6 +107,7 @@ class ItronStatistics:
 @dataclass
 class ItronMeter:
     """Information about a particular meter."""
+
     id_: str
     type: MeterType
     reading: float
@@ -111,6 +118,7 @@ class ItronMeter:
 @dataclass
 class ItronUserAccount:
     """Information about the customers account."""
+
     key: int
     id_: str
 
@@ -118,6 +126,7 @@ class ItronUserAccount:
 @dataclass
 class ItronUsageDetail:
     """The lowest level information about usage."""
+
     timestamp: datetime
     usage: float
 
@@ -177,15 +186,22 @@ class Itron:
         # Note: Do not modify default headers since Home Assistant that uses this library needs to
         # use a default session for all integrations. Instead specify the headers for each request.
         self.session: aiohttp.ClientSession = session
-        self.municipality: type[MunicipalityBase] = select_municipality(
-            municipality)
+        self.municipality: type[MunicipalityBase] = select_municipality(municipality)
         self.username: str = username
         self.password: str = password
         self.servicepoints: list[ItronServicePoint] = []
 
     def adjust_timezone(self, timestamp: datetime) -> datetime:
-        """Force the timestamp into the timezone of the municipality."""
-        return timestamp.replace(tzinfo=pytz.timezone(self.municipality.timezone()))
+        """Force the timestamp into the timezone of the municipality.
+
+        Minutes and seconds are truncated (usually this is already done) to ensure hours.
+        """
+        return timestamp.replace(
+            tzinfo=ZoneInfo(self.municipality.timezone()),
+            minute=0,
+            second=0,
+            microsecond=0,
+        )
 
     def convert_date(self, timestamp: str) -> datetime:
         """Take an ISO string and make a municipality timezone aware datetime object.
@@ -201,18 +217,15 @@ class Itron:
         return ItronStatisticsDetail(
             weekday=ItronStatisticsDetailEntry(
                 value=raw_value["WeekdayStatistic"]["Value"],
-                timestamp=self.convert_date(
-                    raw_value["WeekdayStatistic"]["Date"]),
+                timestamp=self.convert_date(raw_value["WeekdayStatistic"]["Date"]),
             ),
             weekend=ItronStatisticsDetailEntry(
                 value=raw_value["WeekendStatistic"]["Value"],
-                timestamp=self.convert_date(
-                    raw_value["WeekendStatistic"]["Date"]),
+                timestamp=self.convert_date(raw_value["WeekendStatistic"]["Date"]),
             ),
             allday=ItronStatisticsDetailEntry(
                 value=raw_value["AlldayStatistic"]["Value"],
-                timestamp=self.convert_date(
-                    raw_value["AlldayStatistic"]["Date"]),
+                timestamp=self.convert_date(raw_value["AlldayStatistic"]["Date"]),
             ),
         )
 
@@ -306,29 +319,39 @@ class Itron:
                                 ),
                             ),
                             timestamp=self.convert_date(
-                                bundle["DailyData"]["RecentRegisterRead"]["ReadingTime"]),
+                                bundle["DailyData"]["RecentRegisterRead"]["ReadingTime"]
+                            ),
                             statistics=ItronStatistics(
                                 lowest_usage=self.convert_statistics(
-                                    raw_value=bundle["DailyData"]["Statistics"]["LowestUsage"]
+                                    raw_value=bundle["DailyData"]["Statistics"][
+                                        "LowestUsage"
+                                    ]
                                 ),
                                 highest_usage=self.convert_statistics(
-                                    raw_value=bundle["DailyData"]["Statistics"]["HighestUsage"]
+                                    raw_value=bundle["DailyData"]["Statistics"][
+                                        "HighestUsage"
+                                    ]
                                 ),
                                 average_usage=self.convert_statistics(
-                                    raw_value=bundle["DailyData"]["Statistics"]["AverageUsage"]
+                                    raw_value=bundle["DailyData"]["Statistics"][
+                                        "AverageUsage"
+                                    ]
                                 ),
                                 lowest_flow=self.convert_statistics(
-                                    raw_value=bundle["DailyData"]["Statistics"]["LowestFlow"]
+                                    raw_value=bundle["DailyData"]["Statistics"][
+                                        "LowestFlow"
+                                    ]
                                 ),
                                 highest_flow=self.convert_statistics(
-                                    raw_value=bundle["DailyData"]["Statistics"]["HighestFlow"]
+                                    raw_value=bundle["DailyData"]["Statistics"][
+                                        "HighestFlow"
+                                    ]
                                 ),
                             ),
                         )
                         self.servicepoints.append(
                             ItronServicePoint(
-                                start_date=self.convert_date(
-                                    servicepoint["StartDate"]),
+                                start_date=self.convert_date(servicepoint["StartDate"]),
                                 id_=point["ServicePointID"],
                                 timezone=point["TimeZoneID"],
                                 meter=meter,
@@ -368,8 +391,7 @@ class Itron:
                     for usage_detail in usage_details:
                         usages.append(
                             ItronUsageDetail(
-                                timestamp=self.convert_date(
-                                    usage_detail["Date"]),
+                                timestamp=self.convert_date(usage_detail["Date"]),
                                 usage=(usage_detail["Usage"] or 0),
                             )
                         )

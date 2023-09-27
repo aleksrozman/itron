@@ -5,13 +5,13 @@ import logging
 from typing import Any
 
 import voluptuous as vol
-from homeassistant import config_entries
+from homeassistant.config_entries import ConfigEntry, ConfigFlow, OptionsFlow
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers.aiohttp_client import async_create_clientsession
 
-from .const import CONF_MUNICIPALITY, DOMAIN
+from .const import CONF_MUNICIPALITY, DOMAIN, CONF_COST_OPTION
 from .exceptions import CannotConnect, InvalidAuth
 from .itron import Itron, get_supported_municipality_names
 
@@ -45,10 +45,43 @@ async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str,
     }
 
 
-class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
+class ItronOptionsFlowHandler(OptionsFlow):
+    """Handle itron options."""
+
+    def __init__(self, config_entry: ConfigEntry) -> None:
+        """Initialize itron options flow."""
+        self.config_entry = config_entry
+
+    async def async_step_init(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Manage itron options."""
+        if user_input is not None:
+            return self.async_create_entry(title="", data=user_input)
+
+        return self.async_show_form(
+            step_id="init",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_COST_OPTION,
+                        default=self.config_entry.options.get(CONF_COST_OPTION, 1.0),
+                    ): vol.All(vol.Coerce(float), vol.Range(min=0, min_included=True)),
+                }
+            ),
+        )
+
+
+class ItronConfigFlow(ConfigFlow, domain=DOMAIN):
     """Handle a config flow for itron."""
 
     VERSION = 1
+
+    @staticmethod
+    @callback
+    def async_get_options_flow(config_entry: ConfigEntry) -> ItronOptionsFlowHandler:
+        """Get the options flow for this handler."""
+        return ItronOptionsFlowHandler(config_entry)
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None

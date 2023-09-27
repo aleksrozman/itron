@@ -3,9 +3,8 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import timezone
 
-import pytz
 from homeassistant.components.sensor import (
     SensorDeviceClass,
     SensorEntity,
@@ -101,7 +100,7 @@ WATER_SENSORS: tuple[ItronEntityDescription, ...] = (
         device_class=SensorDeviceClass.DATE,
         # Timestamps are midnight, so we need to grab the UTC again to get the right date
         value_fn=lambda data: data.meter.statistics.highest_usage.allday.timestamp.astimezone(
-            pytz.utc
+            timezone.utc
         ).date(),
     ),
 )
