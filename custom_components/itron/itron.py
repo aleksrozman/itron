@@ -259,6 +259,7 @@ class Itron:
         :raises CannotConnect: if we receive any HTTP error
         """
         try:
+            self.servicepoints = []  # clear out known service points
             current_date = datetime.now().strftime("%m/%d/%y %I:%M:%S %p")
             user_accounts = await self.session.get(
                 f"https://{self.municipality.base_url()}/PortalServices/api/Account/UserAccounts"
