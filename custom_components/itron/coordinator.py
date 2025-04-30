@@ -101,18 +101,18 @@ class ItronCoordinator(DataUpdateCoordinator[dict[str, ItronServicePoint]]):
             else:
                 _LOGGER.debug("Calculating new consumption")
                 # Data is provided sometimes a day ahead but empty, so going back
-                # 2 days and grab some extra and we will backfill from 3 days prior
+                # 3 days and grab some extra and we will backfill from 4 days prior
                 last_stat_timestamp = self.api.adjust_timezone(
                     datetime.fromtimestamp(last_stat[meter_statistic_id][0]["start"])
                 )
                 details = await self.api.async_get_usage_since(
-                    servicepoint.id_, last_stat_timestamp - timedelta(2)
+                    servicepoint.id_, last_stat_timestamp - timedelta(3)
                 )
 
                 existing_stats = await get_instance(self.hass).async_add_executor_job(
                     statistics_during_period,
                     self.hass,
-                    last_stat_timestamp - timedelta(3),
+                    last_stat_timestamp - timedelta(4),
                     None,  # from last_stat till now
                     {meter_statistic_id},
                     "hour",

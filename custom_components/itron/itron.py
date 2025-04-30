@@ -392,7 +392,9 @@ class Itron:
                     for usage_detail in usage_details:
                         usages.append(
                             ItronUsageDetail(
-                                timestamp=self.convert_date(usage_detail["Date"]),
+                                # Subtract a second because the usage ends in the hour and home assistant
+                                # starts the next one at the hour
+                                timestamp=(self.convert_date(usage_detail["Date"])-timedelta(hours=1)),
                                 usage=(usage_detail["Usage"] or 0),
                             )
                         )
