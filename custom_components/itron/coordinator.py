@@ -4,7 +4,7 @@ import logging
 from datetime import datetime, timedelta
 
 from homeassistant.components.recorder import get_instance
-from homeassistant.components.recorder.models import StatisticData, StatisticMetaData
+from homeassistant.components.recorder.models import StatisticData, StatisticMetaData, StatisticMeanType
 from homeassistant.components.recorder.statistics import (
     async_add_external_statistics,
     get_last_statistics,
@@ -16,6 +16,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers import aiohttp_client
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
+from homeassistant.util.unit_conversion import EnergyConverter, VolumeConverter
 
 from .const import CONF_MUNICIPALITY, DOMAIN, CONF_COST_OPTION
 from .exceptions import InvalidAuth
@@ -167,20 +168,24 @@ class ItronCoordinator(DataUpdateCoordinator[dict[str, ItronServicePoint]]):
 
             if consumption_statistics:
                 consumption_metadata = StatisticMetaData(
-                    has_mean=False,
                     has_sum=True,
                     name=f"{name_prefix.lower()} consumption",
                     source=DOMAIN,
                     statistic_id=meter_statistic_id,
+                    mean_type=StatisticMeanType.NONE,
+                    unit_class=VolumeConverter.UNIT_CLASS
+                    if servicepoint.commodity.unit == UnitOfMeasure.GALLON
+                    else EnergyConverter.UNIT_CLASS,
                     unit_of_measurement=UnitOfVolume.GALLONS
                     if servicepoint.commodity.unit == UnitOfMeasure.GALLON
                     else UnitOfEnergy.KILO_WATT_HOUR,
                 )
                 cost_metadata = StatisticMetaData(
-                    has_mean=False,
                     has_sum=True,
                     name=f"{name_prefix.lower()} cost",
                     source=DOMAIN,
+                    mean_type=StatisticMeanType.NONE,
+                    unit_class=None,
                     statistic_id=cost_statistic_id,
                     unit_of_measurement=None,
                 )
